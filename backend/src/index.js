@@ -143,6 +143,14 @@ async function handle(request,env) {
     const inserted=await env.DB.prepare("INSERT INTO orders(id,network,asset,payer_address,email,amount_units,amount_usdc,status,created_at,updated_at,expires_at,created_block) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,network,asset,payer,email,"1490000","1.49","pending",now,now,expires,block).run();
     return json({ok:true,id,network,asset,amountUSDC:"1.49",token:USDC,recipient:env.PAYMENT_RECIPIENT,chainId:8453,createdBlock:block,expiresAt:expires,status:"pending"},201,cors(env,origin));
   }
+  const reportMatch=path.match(/^\/api\/order\/([0-9a-f-]{36})\/report$/i);
+  if(reportMatch&&request.method==="GET"){
+    if(!env.DB)return json({ok:false,error:"Database not configured"},503,cors(env,origin));
+    const row=await env.DB.prepare("SELECT o.status,r.report_json FROM orders o LEFT JOIN reports r ON r.order_id=o.id WHERE o.id=?").bind(reportMatch[1]).first();
+    if(!row)return json({ok:false,error:"Order not found"},404,cors(env,origin));
+    if(!row.report_json)return json({ok:false,status:row.status,error:"Report is not ready yet."},202,cors(env,origin));
+    return json({ok:true,status:row.status,report:JSON.parse(row.report_json)},200,cors(env,origin));
+  }
   const statusMatch=path.match(/^\/api\/order\/([0-9a-f-]{36})$/i);
   if(statusMatch&&request.method==="GET"){
     if(!env.DB)return json({ok:false,error:"Database not configured"},503,cors(env,origin));
