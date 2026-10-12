@@ -19,18 +19,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Validate HTML and inline JavaScript
+      - name: Validate site content and JavaScript
         run: |
           node <<'NODE'
           const fs = require('node:fs');
           const cp = require('node:child_process');
           const html = fs.readFileSync('index.html', 'utf8');
-          const required = ['<title>', 'id="grid"', 'id="search"', 'id="pay-button"', 'id="pay-section"', '0x1BD2a89E17c4d17F9bFc1757Bd9Cc299e6a0038E', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'];
+          const required = ['<title>', 'id="grid"', 'id="search"', 'id="pay-button"', 'id="recipient"', 'id="pay-section"', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'prefers-reduced-motion'];
           for (const value of required) if (!html.includes(value)) throw new Error('Missing required page element/config: ' + value);
-          const tokenBlock = html.match(/const TOKENS=\[(.*?)\];/s);
+          if (html.includes('0x1BD2a89E17c4d17F9bFc1757Bd9Cc299e6a0038E')) throw new Error('A hard-coded receiving address remains in the build.');
+          const tokenBlock = html.match(/const TOKENS=\[(.*?)\];\nconst USDC=/s);
           if (!tokenBlock) throw new Error('Token list not found');
-          const tokenCount = [...tokenBlock[1].matchAll(/\["[^"]+",\s*"0x[a-fA-F0-9]{40}"\]/g)].length;
-          if (tokenCount !== 25) throw new Error('Expected 25 address entries; found ' + tokenCount);
+          const entries = [...tokenBlock[1].matchAll(/\["[^"]+",\s*"0x[a-fA-F0-9]{40}"\]/g)];
+          if (entries.length !== 25) throw new Error('Expected 25 address entries; found ' + entries.length);
           const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
           scripts.forEach((script, i) => {
             const path = '/tmp/basegrid-inline-' + i + '.js';
@@ -38,7 +39,9 @@ jobs:
             const result = cp.spawnSync(process.execPath, ['--check', path], {encoding:'utf8'});
             if (result.status !== 0) throw new Error('Inline script syntax error: ' + (result.stderr || result.stdout));
           });
-          console.log('Validated HTML essentials, 25 addresses, and ' + scripts.length + ' inline scripts.');
+          for (const path of ['manifest.webmanifest', 'icon.svg', 'sw.js']) if (!fs.existsSync(path)) throw new Error('Missing app asset: ' + path);
+          JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));
+          console.log('Validated redesigned site, no embedded recipient address, 25 contracts, app assets, and ' + scripts.length + ' inline scripts.');
           NODE
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
