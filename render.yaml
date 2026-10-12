@@ -1,0 +1,39 @@
+services:
+  - type: web
+    name: basescan25-api
+    runtime: node
+    plan: starter
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: basegrid-safety-db
+          property: connectionString
+      - key: SITE_ORIGIN
+        value: https://wayout4.github.io
+      - key: BASE_RPC_URL
+        value: https://mainnet.base.org
+      - key: CONFIRMATIONS
+        value: "12"
+      - key: MAX_BLOCK_RANGE
+        value: "1500"
+      - key: VERIFIER_INTERVAL_SECONDS
+        value: "60"
+      - key: PAYMENT_RECIPIENT
+        sync: false
+      - key: ADMIN_SECRET
+        generateValue: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: FROM_EMAIL
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+
+databases:
+  - name: basegrid-safety-db
+    databaseName: basegrid_safety
+    user: basegrid
+    plan: basic-256mb
