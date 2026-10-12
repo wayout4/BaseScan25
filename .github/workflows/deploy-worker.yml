@@ -6,9 +6,19 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.D1_DATABASE_ID != '' && secrets.PAYMENT_RECIPIENT != '' && secrets.ADMIN_SECRET != '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Validate required deployment secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+          PAYMENT_RECIPIENT: ${{ secrets.PAYMENT_RECIPIENT }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+        run: |
+          for name in CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID D1_DATABASE_ID PAYMENT_RECIPIENT ADMIN_SECRET; do
+            if [ -z "${!name}" ]; then echo "Missing required GitHub Actions secret: $name"; exit 1; fi
+          done
       - uses: actions/setup-node@v4
         with:
           node-version: 22
