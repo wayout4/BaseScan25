@@ -1,0 +1,29 @@
+name: Validate Render backend
+on:
+  pull_request:
+  push:
+    branches: [render-postgres-migration]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run check
+      - name: Validate PostgreSQL schema
+        run: |
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+          const schema = readFileSync('backend/schema.postgres.sql', 'utf8');
+          for (const table of ['orders', 'reports', 'settings']) {
+            if (!schema.includes('CREATE TABLE IF NOT EXISTS ' + table)) throw new Error('Missing PostgreSQL table: ' + table);
+          }
+          if (schema.includes('PRAGMA') || schema.includes('AUTOINCREMENT')) throw new Error('Found SQLite-only schema syntax.');
+          console.log('PostgreSQL schema checks passed.');
+          NODE
