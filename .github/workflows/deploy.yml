@@ -19,6 +19,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Configure API URL when supplied
+        env:
+          BASEGRID_API_URL: ${{ vars.BASEGRID_API_URL }}
+        run: |
+          if [ -n "$BASEGRID_API_URL" ]; then
+            BASEGRID_API_URL="$BASEGRID_API_URL" node <<'NODE'
+            const fs = require('node:fs');
+            const api = process.env.BASEGRID_API_URL.replace(/\/$/, '');
+            if (!/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?$/i.test(api)) throw new Error('BASEGRID_API_URL must be an HTTPS origin without a path.');
+            for (const file of ['index.html', 'safety.html']) {
+              const html = fs.readFileSync(file, 'utf8');
+              const updated = html.replace(/<meta name="basegrid-api" content="[^"]*">/, '<meta name="basegrid-api" content="' + api + '">');
+              if (updated === html && !html.includes('content="' + api + '"')) throw new Error('Could not configure API URL in ' + file);
+              fs.writeFileSync(file, updated);
+            }
+          NODE
+          else
+            echo "BASEGRID_API_URL is unset; paid checkout remains disabled until the API URL is configured."
+          fi
       - name: Validate site content and JavaScript
         run: |
           node <<'NODE'
@@ -27,9 +46,13 @@ jobs:
           const html = fs.readFileSync('index.html', 'utf8');
           const safety = fs.readFileSync('safety.html', 'utf8');
           const backend = fs.readFileSync('backend/src/index.js', 'utf8');
-          const schema = fs.readFileSync('backend/schema.sql', 'utf8');
+          const schema = fs.readFileSync('backend/schema.postgres.sql', 'utf8');
           if (!schema.includes('CREATE TABLE IF NOT EXISTS orders') || !schema.includes('CREATE TABLE IF NOT EXISTS reports')) throw new Error('Backend database schema missing required tables.');
+          const server = fs.readFileSync('backend/server.js', 'utf8');
           fs.writeFileSync('/tmp/basegrid-backend.mjs', backend);
+          fs.writeFileSync('/tmp/basegrid-server.mjs', server);
+          const serverCheck = cp.spawnSync(process.execPath, ['--check', '/tmp/basegrid-server.mjs'], {encoding:'utf8'});
+          if (serverCheck.status !== 0) throw new Error('Node server JavaScript syntax error: ' + (serverCheck.stderr || serverCheck.stdout));
           const backendCheck = cp.spawnSync(process.execPath, ['--check', '/tmp/basegrid-backend.mjs'], {encoding:'utf8'});
           if (backendCheck.status !== 0) throw new Error('Backend JavaScript syntax error: ' + (backendCheck.stderr || backendCheck.stdout));
           if (!backend.includes('eth_getLogs') || !backend.includes('api.gopluslabs.io') || !backend.includes('api.rugcheck.xyz') || !backend.includes('api.resend.com')) throw new Error('Backend provider/payment/email integration missing.');
@@ -57,7 +80,7 @@ jobs:
           });
           for (const path of ['manifest.webmanifest', 'icon.svg', 'sw.js']) if (!fs.existsSync(path)) throw new Error('Missing app asset: ' + path);
           JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));
-          console.log('Validated site, safety lab, no embedded legacy recipient address, 25 contracts, app assets, and ' + (scripts.length + safetyScripts.length) + ' inline scripts.');
+          console.log('Validated site, safety lab, PostgreSQL schema, Node server syntax, no embedded legacy recipient address, 25 contracts, app assets, and ' + (scripts.length + safetyScripts.length) + ' inline scripts.');
           NODE
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3

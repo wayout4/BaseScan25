@@ -1,0 +1,17 @@
+{
+  "name": "basescan25-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BaseGrid Safety API for BaseScan25",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node backend/server.js",
+    "check": "node --check backend/server.js && node --check backend/src/index.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}
