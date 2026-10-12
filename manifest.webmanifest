@@ -1,13 +1,18 @@
 {
-  "name": "BaseGrid 25",
-  "short_name": "BaseGrid25",
-  "description": "Explore Base contract addresses and direct USDC payments on Base.",
+  "name": "BaseGrid — Onchain Field Guide",
+  "short_name": "BaseGrid",
+  "description": "Explore submitted Base contract addresses and wallet-first USDC tools.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#080c18",
-  "theme_color": "#080c18",
+  "background_color": "#09090f",
+  "theme_color": "#09090f",
   "icons": [
-    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
   ]
 }
