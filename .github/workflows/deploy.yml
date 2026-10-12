@@ -35,7 +35,7 @@ jobs:
           const entries = [...tokenBlock[1].matchAll(/\["[^"]+",\s*"0x[a-fA-F0-9]{40}"\]/g)];
           if (entries.length !== 25) throw new Error('Expected 25 address entries; found ' + entries.length);
           const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
-          const safetyScripts = [...safety.matchAll(/<script(?:\\s[^>]*)?>([\\s\\S]*?)<\\/script>/gi)].map(m => m[1]).filter(s => s.trim());
+          const safetyScripts = [...safety.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
           safetyScripts.forEach((script, i) => {
             const path = '/tmp/safety-inline-' + i + '.js';
             fs.writeFileSync(path, script);
