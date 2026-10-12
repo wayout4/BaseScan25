@@ -110,6 +110,10 @@ async function summarizeWithAI(env,scan) {
 }
 async function deliverOrder(env,order,tx,block) {
   const scan=await scanAsset(order.network,order.asset);
+  if(env.OPENAI_API_KEY) {
+    try { scan.aiSummary=await summarizeWithAI(env,scan); }
+    catch(e) { console.error("AI summary unavailable",e.message); scan.aiSummary=null; }
+  }
   await env.DB.prepare("INSERT INTO reports(order_id,report_json,created_at) VALUES(?,?,?) ON CONFLICT(order_id) DO UPDATE SET report_json=excluded.report_json,created_at=excluded.created_at").bind(order.id,JSON.stringify(scan),Date.now()).run();
   await env.DB.prepare("UPDATE orders SET status='report_ready',updated_at=? WHERE id=? AND status='paid'").bind(Date.now(),order.id).run();
   if(env.RESEND_API_KEY && env.FROM_EMAIL && order.email) {
