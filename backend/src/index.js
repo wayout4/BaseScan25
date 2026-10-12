@@ -96,7 +96,7 @@ async function verifyPayments(env) {
     }
     from=to+1;
   }
-  await db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run().catch(async()=>db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run());
+  await db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run().catch(async()=>db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run());
   return {head,safe,checked,paid};
 }
 async function deliverOrder(env,order,tx,block) {
@@ -116,7 +116,7 @@ async function handle(request,env) {
   if(request.method==="OPTIONS")return new Response(null,{status:204,headers:cors(env,origin)});
   const url=new URL(request.url),path=url.pathname.replace(/\/+$/,"")||"/";
   if(env.SITE_ORIGIN && origin && origin!==env.SITE_ORIGIN)return json({ok:false,error:"Origin not allowed"},403,cors(env,origin));
-  if(path==="/api/health"&&request.method==="GET")return json({ok:true,service:"BaseGrid Safety API",time:new Date().toISOString(),paymentVerifierConfigured:!!(env.DB&&env.PAYMENT_RECIPIENT),emailConfigured:!!(env.RESEND_API_KEY&&env.FROM_EMAIL)},200,cors(env,origin));
+  if(path==="/api/health"&&request.method==="GET")return json({ok:true,service:"BaseGrid Safety API",time:new Date().toISOString(),paymentVerifierConfigured:!!(env.DB&&env.PAYMENT_RECIPIENT),emailConfigured:!!(env.RESEND_API_KEY&&env.FROM_EMAIL),paymentRecipient:env.PAYMENT_RECIPIENT||null,priceUSDC:"1.49",paymentNetwork:"Base Mainnet"},200,cors(env,origin));
   if(path==="/api/scan"&&request.method==="GET"){
     const asset=url.searchParams.get("asset")||"",network=url.searchParams.get("network")||"";
     if(!asset||!network)return json({ok:false,error:"network and asset are required"},400,cors(env,origin));
