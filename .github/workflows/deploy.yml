@@ -19,6 +19,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Configure API URL when supplied
+        env:
+          BASEGRID_API_URL: ${{ vars.BASEGRID_API_URL }}
+        run: |
+          if [ -n "$BASEGRID_API_URL" ]; then
+            BASEGRID_API_URL="$BASEGRID_API_URL" node <<'NODE'
+            const fs = require('node:fs');
+            const api = process.env.BASEGRID_API_URL.replace(/\/$/, '');
+            if (!/^https:\/\/[a-z0-9.-]+(?::[0-9]+)?$/i.test(api)) throw new Error('BASEGRID_API_URL must be an HTTPS origin without a path.');
+            for (const file of ['index.html', 'safety.html']) {
+              const html = fs.readFileSync(file, 'utf8');
+              const updated = html.replace(/<meta name="basegrid-api" content="[^"]*">/, '<meta name="basegrid-api" content="' + api + '">');
+              if (updated === html && !html.includes('content="' + api + '"')) throw new Error('Could not configure API URL in ' + file);
+              fs.writeFileSync(file, updated);
+            }
+            NODE
+          else
+            echo "BASEGRID_API_URL is unset; paid checkout remains disabled until the API URL is configured."
+          fi
       - name: Validate site content and JavaScript
         run: |
           node <<'NODE'
