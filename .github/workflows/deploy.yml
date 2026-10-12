@@ -1,14 +1,12 @@
-name: Deploy BaseGrid 25 to GitHub Pages
+name: Validate BaseGrid 25
 on:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
-  pages: write
-  id-token: write
 concurrency:
-  group: pages
+  group: validate
   cancel-in-progress: true
 jobs:
   validate:
@@ -37,21 +35,3 @@ jobs:
           });
           console.log('Validated HTML essentials, 25 addresses, and ' + scripts.length + ' inline scripts.');
           NODE
-  deploy:
-    needs: validate
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Configure Pages
-        uses: actions/configure-pages@v5
-      - name: Upload website
-        uses: actions/upload-pages-artifact@v4
-        with:
-          path: .
-      - name: Deploy website
-        id: deployment
-        uses: actions/deploy-pages@v4
