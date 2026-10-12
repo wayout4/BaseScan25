@@ -25,7 +25,7 @@ jobs:
           const fs = require('node:fs');
           const cp = require('node:child_process');
           const html = fs.readFileSync('index.html', 'utf8');
-          const required = ['<title>', 'id="grid"', 'id="search"', 'id="pay-button"', 'id="recipient"', 'id="pay-section"', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'prefers-reduced-motion'];
+          const required = ['<title>', 'id="grid"', 'id="search"', 'id="pay-button"', 'id="recipient"', 'id="payments"', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'prefers-reduced-motion'];
           for (const value of required) if (!html.includes(value)) throw new Error('Missing required page element/config: ' + value);
           if (html.includes('0x1BD2a89E17c4d17F9bFc1757Bd9Cc299e6a0038E')) throw new Error('A hard-coded receiving address remains in the build.');
           const tokenBlock = html.match(/const TOKENS=\[(.*?)\];\nconst USDC=/s);
