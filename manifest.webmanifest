@@ -1,0 +1,13 @@
+{
+  "name": "BaseGrid 25",
+  "short_name": "BaseGrid25",
+  "description": "Explore Base contract addresses and direct USDC payments on Base.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#080c18",
+  "theme_color": "#080c18",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
