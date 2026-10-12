@@ -15,28 +15,6 @@ const pool = process.env.DATABASE_URL
     })
   : null;
 
-function createDbAdapter(pgPool) {
-  return {
-    prepare(sql) {
-      let values = [];
-      return {
-        bind(...args) {
-          values = args;
-          return this;
-        },
-        async first() {
-          const result = await pgPool.query(sql.replace(/\?/g, (_, offset) => "$" + (values._next = (values._next || 0) + 1)), values);
-          return result.rows[0] ?? null;
-        },
-        async run() {
-          const result = await pgPool.query(sql.replace(/\?/g, () => "$" + (values._next = (values._next || 0) + 1)), values);
-          return { meta: { changes: result.rowCount ?? 0 }, rows: result.rows };
-        }
-      };
-    }
-  };
-}
-
 function adaptSql(sql) {
   let i = 0;
   return sql.replace(/\?/g, () => "$" + (++i));
