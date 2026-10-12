@@ -1,0 +1,48 @@
+name: Deploy BaseGrid Safety API to Cloudflare
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' && secrets.D1_DATABASE_ID != '' && secrets.PAYMENT_RECIPIENT != '' && secrets.ADMIN_SECRET != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Configure Wrangler
+        env:
+          D1_DATABASE_ID: ${{ secrets.D1_DATABASE_ID }}
+        run: |
+          sed -i "s/REPLACE_WITH_D1_DATABASE_ID/$D1_DATABASE_ID/" backend/wrangler.toml
+          npm install --global wrangler
+      - name: Initialize database schema
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler d1 execute basegrid-safety --remote --file=backend/schema.sql
+      - name: Set required Worker secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PAYMENT_RECIPIENT: ${{ secrets.PAYMENT_RECIPIENT }}
+          ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
+        run: |
+          printf '%s' "$PAYMENT_RECIPIENT" | wrangler secret put PAYMENT_RECIPIENT
+          printf '%s' "$ADMIN_SECRET" | wrangler secret put ADMIN_SECRET
+      - name: Set optional email and AI secrets
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -n "$RESEND_API_KEY" ]; then printf '%s' "$RESEND_API_KEY" | wrangler secret put RESEND_API_KEY; fi
+          if [ -n "$OPENAI_API_KEY" ]; then printf '%s' "$OPENAI_API_KEY" | wrangler secret put OPENAI_API_KEY; fi
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: wrangler deploy
