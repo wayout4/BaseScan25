@@ -99,12 +99,21 @@ async function verifyPayments(env) {
   await db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run().catch(async()=>db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run());
   return {head,safe,checked,paid};
 }
+async function summarizeWithAI(env,scan) {
+  if(!env.OPENAI_API_KEY)return null;
+  const payload={network:scan.network,asset:scan.asset,coverage:scan.coverage,sources:scan.sources,findings:scan.findings,markets:(scan.markets||[]).slice(0,8).map(m=>({chain:m.chain,dex:m.dex,symbol:m.baseSymbol+"/"+m.quoteSymbol,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,volume24h:m.volume24h}))};
+  const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"authorization":"Bearer "+env.OPENAI_API_KEY,"content-type":"application/json"},body:JSON.stringify({model:env.AI_MODEL||"gpt-4.1-mini",input:[{role:"system",content:"Explain crypto risk data cautiously using only supplied JSON. Never claim a token is safe, audited, a scam, or guaranteed. Distinguish reported facts from unknowns. Never invent data, prices, permissions, or conclusions. Give a concise plain-language summary, top concerns, and next checks. State this is not financial advice or an audit."},{role:"user",content:JSON.stringify(payload)}],max_output_tokens:500})});
+  if(!response.ok)throw new Error("AI summarizer HTTP "+response.status);
+  const data=await response.json();
+  const output=(data.output||[]).flatMap(item=>item.content||[]).filter(c=>c.type==="output_text").map(c=>c.text).join("\\n").trim();
+  return output?output.slice(0,6000):null;
+}
 async function deliverOrder(env,order,tx,block) {
   const scan=await scanAsset(order.network,order.asset);
   await env.DB.prepare("INSERT INTO reports(order_id,report_json,created_at) VALUES(?,?,?) ON CONFLICT(order_id) DO UPDATE SET report_json=excluded.report_json,created_at=excluded.created_at").bind(order.id,JSON.stringify(scan),Date.now()).run();
   await env.DB.prepare("UPDATE orders SET status='report_ready',updated_at=? WHERE id=? AND status='paid'").bind(Date.now(),order.id).run();
   if(env.RESEND_API_KEY && env.FROM_EMAIL && order.email) {
-    const html="<h1>Token safety brief</h1><p>Network: "+esc(order.network)+"</p><p>Asset: "+esc(order.asset)+"</p><p>Payment verified: "+esc(tx)+" (Base block "+block+")</p><p>Sources: "+esc((scan.sources||[]).join(", ")||"No provider data")+"</p><h2>Findings</h2><ul>"+scan.findings.map(f=>"<li><b>"+esc(f.label)+"</b>: "+esc(f.detail)+(f.value?" ("+esc(f.value)+")":"")+"</li>").join("")+"</ul><h2>Markets</h2><ul>"+scan.markets.map(m=>"<li>"+esc(m.chain+" "+m.baseSymbol+"/"+m.quoteSymbol)+" price "+esc(m.priceUsd||"unknown")+", liquidity "+esc(m.liquidityUsd==null?"unknown":String(m.liquidityUsd))+"</li>").join("")+"</ul><p>This automated brief is not an audit or investment advice. Unknown means unknown.</p>";
+    const html="<h1>Token safety brief</h1><p>Network: "+esc(order.network)+"</p><p>Asset: "+esc(order.asset)+"</p><p>Payment verified: "+esc(tx)+" (Base block "+block+")</p><p>Sources: "+esc((scan.sources||[]).join(", ")||"No provider data")+"</p>"+(scan.aiSummary?"<h2>AI-assisted explanation</h2><p>"+esc(scan.aiSummary)+"</p>":"")+"<h2>Findings</h2><ul>"+scan.findings.map(f=>"<li><b>"+esc(f.label)+"</b>: "+esc(f.detail)+(f.value?" ("+esc(f.value)+")":"")+"</li>").join("")+"</ul><h2>Markets</h2><ul>"+scan.markets.map(m=>"<li>"+esc(m.chain+" "+m.baseSymbol+"/"+m.quoteSymbol)+" price "+esc(m.priceUsd||"unknown")+", liquidity "+esc(m.liquidityUsd==null?"unknown":String(m.liquidityUsd))+"</li>").join("")+"</ul><p>This automated brief is not an audit or investment advice. Unknown means unknown.</p>";
     const mail=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+env.RESEND_API_KEY,"content-type":"application/json"},body:JSON.stringify({from:env.FROM_EMAIL,to:[order.email],subject:"Your Token Safety Brief · "+order.network,html})});
     if(mail.ok) await env.DB.prepare("UPDATE orders SET status='delivered',updated_at=? WHERE id=?").bind(Date.now(),order.id).run();
     else {console.error("email provider failed",await mail.text());await env.DB.prepare("UPDATE orders SET status='report_ready',updated_at=? WHERE id=?").bind(Date.now(),order.id).run();}
