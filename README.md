@@ -1,22 +1,25 @@
-# BaseGrid 25
+# BaseGrid / 25
 
-Responsive static directory for 25 user-submitted Base addresses with BaseScan links and an optional direct native-USDC transfer flow on Base Mainnet.
+A responsive, static contract directory and wallet-first utility for exploring submitted Base addresses. The interface is designed to make inspection, address comparison, and transaction review straightforward.
 
-## Cloudflare Pages deployment
+## Live site
 
-The repository is configured to deploy to Cloudflare Pages through GitHub Actions. One-time setup is required:
+GitHub Pages publishes the site from the `main` branch using the workflow in `.github/workflows/deploy.yml`. Confirm the current release in the repository's Actions tab before treating the site as live.
 
-1. In the Cloudflare dashboard, open **Workers & Pages** and create a Pages project named **basescan25**. Choose **Direct Upload** if prompted; this repository deploys with Wrangler from GitHub Actions.
-2. In Cloudflare, create an API token with the permissions required to deploy to Pages for the correct account. Store it in GitHub repository **Settings → Secrets and variables → Actions** as `CLOUDFLARE_API_TOKEN`.
-3. Add the Cloudflare account ID as repository secret `CLOUDFLARE_ACCOUNT_ID`.
-4. Push to `main`, or manually run the **Deploy BaseGrid 25 to Cloudflare Pages** workflow in the Actions tab.
+## What's included
 
-After a successful run, the expected Pages URL is https://basescan25.pages.dev/ (verify it in Cloudflare Pages; this URL is not proof of a completed deployment).
+- Searchable directory of 25 submitted Base contract addresses.
+- Direct BaseScan links and copy-address actions.
+- Responsive layout, reduced-motion support, accessible labels, and installable web-app metadata.
+- Optional direct native-USDC transfer flow on Base Mainnet (chain ID 8453).
+- Recipient address is entered by the user at the time of transfer; no receiving wallet is hard-coded into the frontend.
+- Service-worker cache versioning so new releases replace stale cached assets.
 
 ## Important safety notes
 
-- The listed addresses were supplied by the site owner; this project does not verify token identity, liquidity, security, or tradability.
-- The payment interface sends native USDC on Base (chain ID 8453) to the fixed recipient displayed on the page. Confirm that recipient is yours and correct before using it.
-- This is a static frontend, not a production checkout system. It has no order database, fulfillment, backend transaction verification, or abuse/fraud monitoring.
-- Wallets and network fees may apply. Never share a recovery phrase or private key.
+- Listed contract addresses are not independently verified for token identity, ownership, security, liquidity, or tradability. A directory listing is not an endorsement.
+- The transfer tool sends native USDC directly to the recipient entered by the user. Verify the complete recipient address from a trusted source before proceeding.
+- This is a static frontend, not a production checkout system. It has no order database, fulfillment, backend transaction verification, payment reconciliation, or fraud monitoring.
+- Wallet and network fees may apply. Never share a recovery phrase or private key.
+- Publishing the website does not itself generate revenue.
 - Native iOS/Android app builds and signing are not included in this website deployment.
