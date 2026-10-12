@@ -79,11 +79,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 let verifyTimer;
+let verifierRunning = false;
 async function runPaymentVerifier() {
+  if (verifierRunning) return;
   if (!env.DB || !env.PAYMENT_RECIPIENT || !env.ADMIN_SECRET) {
     console.warn("Payment verifier idle: set DATABASE_URL, PAYMENT_RECIPIENT and ADMIN_SECRET.");
     return;
   }
+  verifierRunning = true;
   try {
     const request = new Request("http://localhost/api/admin/verify", {
       method: "POST",
@@ -94,6 +97,8 @@ async function runPaymentVerifier() {
     else console.log("Payment verification cycle completed.");
   } catch (error) {
     console.error("Payment verification cycle failed:", error?.message || error);
+  } finally {
+    verifierRunning = false;
   }
 }
 
