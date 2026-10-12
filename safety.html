@@ -12,7 +12,22 @@ const $=id=>document.getElementById(id);const addrRE=/^0x[a-fA-F0-9]{40}$/;const
 function el(tag,cls,text){const n=document.createElement(tag);if(cls)n.className=cls;if(text!==undefined)n.textContent=text;return n}function link(parent,label,url){if(!url||!/^https:\/\//i.test(url))return;const a=el('a','btn',label+' ↗');a.href=url;a.target='_blank';a.rel='noopener noreferrer';parent.append(a)}
 function showFlag(title,detail,kind){const box=el('div','flag '+kind);box.append(el('strong','',title),el('div','muted',detail));$('risk-results').append(box)}
 function usd(v){const n=Number(v);return Number.isFinite(n)?n.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:n<1?8:2}):'Not reported'}
+const API_BASE=document.querySelector('meta[name="basegrid-api"]')?.content.trim().replace(/\/$/,"")||"";
 async function run(){const q=$('query').value.trim();const chain=$('chain').value;const opt=$('chain').selectedOptions[0];const slug=opt.dataset.slug||'';if(!q){$('status').textContent='Enter a token name, symbol, or address first.';return}const button=$('scan');button.disabled=true;$('status').textContent='Querying live market and security sources…';$('summary').classList.remove('hide');$('markets').classList.add('hide');$('risk-results').replaceChildren();$('quick-links').replaceChildren();$('pair-list').replaceChildren();$('result-title').textContent=q;$('result-sub').textContent='Selected network: '+opt.textContent;try{
+if(API_BASE){
+ const network=slug||opt.textContent;
+ const response=await fetch(API_BASE+"/api/scan?network="+encodeURIComponent(network)+"&asset="+encodeURIComponent(q),{cache:"no-store"});
+ const data=await response.json();if(!response.ok||!data.ok)throw Error(data.error||"Backend scan failed");
+ $('result-title').textContent=(data.asset||q)+" research";
+ $('result-sub').textContent="Network: "+data.network+" · Sources: "+((data.sources||[]).join(", ")||"none")+" · "+data.generatedAt;
+ for(const item of (data.links||[]))link($('quick-links'),item.label,item.url);
+ for(const f of (data.findings||[]))showFlag(f.label,f.detail+(f.value!==undefined?" · Provider value: "+f.value:""),f.type==="warning"?"bad":f.type==="info"?"warn":"unknown");
+ if(!(data.findings||[]).length)showFlag("No findings returned","No usable risk fields were returned; this is not a pass.","unknown");
+ if((data.markets||[]).length){$('markets').classList.remove('hide');for(const p of data.markets){const card=el('div','pair');card.append(el('strong','',((p.baseSymbol||'?')+'/'+(p.quoteSymbol||'?'))+' · '+p.chain));card.append(el('p','muted','Price: '+usd(p.priceUsd)+' · Liquidity: '+(p.liquidityUsd==null?'Not reported':usd(p.liquidityUsd))+' · 24h volume: '+(p.volume24h==null?'Not reported':usd(p.volume24h))));const links=el('div','actions');link(links,'Open pair',p.url);card.append(links);$('pair-list').append(card)}}
+ else showFlag('Market data: UNKNOWN','No indexed pair was returned. This does not establish safety or fraud.','unknown');
+ $('status').textContent='Backend scan complete. Coverage is partial; review each finding and unknown field.';
+ return;
+}
 let pairs=[];let security=null;let securityError='';const isAddress=addrRE.test(q);
 if(isAddress){if(slug){try{const r=await fetch('https://api.dexscreener.com/tokens/v1/'+encodeURIComponent(slug)+'/'+encodeURIComponent(q),{headers:{accept:'application/json'}});if(r.ok){const d=await r.json();pairs=Array.isArray(d)?d:[]}else throw Error('HTTP '+r.status)}catch(e){securityError='Market lookup unavailable: '+e.message}}
 else{try{const r=await fetch('https://api.dexscreener.com/latest/dex/search?q='+encodeURIComponent(q));if(r.ok){const d=await r.json();pairs=(d.pairs||[]).filter(p=>(p.baseToken?.address||'').toLowerCase()===q.toLowerCase()||(p.quoteToken?.address||'').toLowerCase()===q.toLowerCase())}}catch(e){securityError='Market lookup unavailable: '+e.message}}
