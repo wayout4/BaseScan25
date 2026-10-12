@@ -58,7 +58,7 @@ The protected manual monitor endpoint is `POST /api/admin/verify` with `Authoriz
 - `GET /api/health` — readiness/configuration status.
 - `GET /api/scan?network=base&asset=0x...` — provider aggregation.
 - `POST /api/order` — records an order and expected payer.
-- `GET /api/order/{uuid}` — returns order status.
+- `GET /api/order/{uuid}` — returns order status.\n- `GET /api/order/{uuid}/report` — returns the generated report JSON to anyone holding the unguessable order UUID.
 - `POST /api/admin/verify` — authenticated payment-monitor run.
 
 ## Before public launch
