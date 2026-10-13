@@ -46,6 +46,10 @@ const env = {
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
   FROM_EMAIL: process.env.FROM_EMAIL || "",
   OPENAI_API_KEY: process.env.OPENAI_API_KEY || "",
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || "",
+  STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET || "",
+  STRIPE_ENABLE_CASHAPP_PAY: process.env.STRIPE_ENABLE_CASHAPP_PAY || "",
+  SITE_URL: process.env.SITE_URL || "https://wayout4.github.io/BaseScan25/",
   AI_MODEL: process.env.AI_MODEL || "gpt-4.1-mini"
 };
 
