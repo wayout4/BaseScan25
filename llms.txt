@@ -1,0 +1,22 @@
+# BaseScan25
+
+> Public-data token research briefs for humans and AI agents. Informational only; not a security audit or financial advice.
+
+## Website
+- https://wayout4.github.io/BaseScan25/
+- Machine-readable catalog: https://wayout4.github.io/BaseScan25/catalog.json
+
+## Products (USD, one-time)
+- Token Safety Brief, one asset, $1.49: https://buy.stripe.com/fZubJ31Sn0EI4Q71dYdIA08
+- 10-Asset Research Bundle, up to ten assets, $7.99: https://buy.stripe.com/4gM00ldB59be0zR09UdIA09
+- 25-Asset Research Bundle, up to twenty-five assets, $14.99: https://buy.stripe.com/8x200laoT3QU1DVcWGdIA0a
+
+## Important fulfillment note
+Payment links collect payment but bundle asset submission and report delivery are not yet automatically connected. Verify payment and fulfill manually. Do not claim instant or guaranteed delivery.
+
+## Research limitations
+Provider coverage varies by network and asset. Missing data is not a safety pass. Results are informational and do not guarantee safety, performance, or investment outcomes.
+
+## Policies
+- Terms: https://github.com/wayout4/BaseScan25/blob/main/TERMS.md
+- Privacy: https://github.com/wayout4/BaseScan25/blob/main/PRIVACY.md
