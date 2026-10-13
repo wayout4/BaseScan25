@@ -1,0 +1,46 @@
+{
+  "name": "BaseScan25",
+  "description": "Public-data token research briefs for humans and AI agents. Informational only; not an audit or financial advice.",
+  "currency": "USD",
+  "products": [
+    {
+      "id": "token-brief-1",
+      "name": "Token Safety Brief",
+      "price": 1.49,
+      "currency": "USD",
+      "billing": "one_time",
+      "asset_limit": 1,
+      "checkout_url": "https://buy.stripe.com/fZubJ31Sn0EI4Q71dYdIA08",
+      "fulfillment": "manual_or_existing_pipeline; verify availability before promising delivery"
+    },
+    {
+      "id": "token-bundle-10",
+      "name": "10-Asset Research Bundle",
+      "price": 7.99,
+      "currency": "USD",
+      "billing": "one_time",
+      "asset_limit": 10,
+      "checkout_url": "https://buy.stripe.com/4gM00ldB59be0zR09UdIA09",
+      "fulfillment": "manual; buyer must provide asset list and payment must be verified"
+    },
+    {
+      "id": "token-bundle-25",
+      "name": "25-Asset Research Bundle",
+      "price": 14.99,
+      "currency": "USD",
+      "billing": "one_time",
+      "asset_limit": 25,
+      "checkout_url": "https://buy.stripe.com/8x200laoT3QU1DVcWGdIA0a",
+      "fulfillment": "manual; buyer must provide asset list and payment must be verified"
+    }
+  ],
+  "limitations": [
+    "Provider coverage varies by network and asset.",
+    "Missing data is not a safety pass.",
+    "Reports are informational, not audits or financial advice.",
+    "Purchasing a bundle does not currently trigger automatic report delivery."
+  ],
+  "website": "https://wayout4.github.io/BaseScan25/",
+  "terms": "https://github.com/wayout4/BaseScan25/blob/main/TERMS.md",
+  "privacy": "https://github.com/wayout4/BaseScan25/blob/main/PRIVACY.md"
+}
