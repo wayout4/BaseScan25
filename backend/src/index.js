@@ -181,13 +181,19 @@ async function handle(request,env) {
     let event;try{event=JSON.parse(raw)}catch{return json({ok:false,error:"Invalid webhook JSON."},400)}
     if(event.type==="checkout.session.completed"||event.type==="checkout.session.async_payment_succeeded"){
       const session=event.data?.object;
-      if(session?.mode==="payment"&&session?.payment_status==="paid"&&session?.metadata?.product==="token_safety_scan"){
+      if(session?.mode==="payment"&&session?.payment_status==="paid"&&session?.currency==="usd"&&session?.amount_total===149&&session?.metadata?.product==="token_safety_scan"){
         const orderId=session.metadata.order_id;
         if(!orderId||!session.id)return json({ok:false,error:"Checkout metadata missing."},400);
         const order=await env.DB.prepare("SELECT * FROM orders WHERE id=? AND payment_method='stripe'").bind(orderId).first();
-        if(order&&order.status==="pending"&&(!order.stripe_session_id||order.stripe_session_id===session.id)){
-          const updated=await env.DB.prepare("UPDATE orders SET status='paid',stripe_session_id=?,stripe_payment_intent_id=?,updated_at=? WHERE id=? AND status='pending' AND payment_method='stripe'").bind(session.id,typeof session.payment_intent==="string"?session.payment_intent:null,Date.now(),orderId).run();
-          if(updated.meta?.changes){try{await deliverOrder(env,{...order,stripe_session_id:session.id},session.id,"Stripe")}catch(e){console.error("Stripe report delivery failed",orderId,e.message)}}
+        if(order&&order.stripe_session_id===session.id&&(order.status==="pending"||order.status==="paid")){
+          if(order.status==="pending"){
+            await env.DB.prepare("UPDATE orders SET status='paid',stripe_payment_intent_id=?,updated_at=? WHERE id=? AND status='pending' AND payment_method='stripe' AND stripe_session_id=?").bind(typeof session.payment_intent==="string"?session.payment_intent:null,Date.now(),orderId,session.id).run();
+          }
+          const report=await env.DB.prepare("SELECT order_id FROM reports WHERE order_id=?").bind(orderId).first();
+          if(!report){
+            try{await deliverOrder(env,{...order,status:"paid",stripe_session_id:session.id},session.id,"Stripe")}
+            catch(e){console.error("Stripe report delivery failed",orderId,e.message);return json({ok:false,error:"Payment received; report fulfillment will retry."},500)}
+          }
         }
       }
     }
