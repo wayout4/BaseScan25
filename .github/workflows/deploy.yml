@@ -1,4 +1,4 @@
-name: Publish BaseGrid 25 to GitHub Pages
+name: Publish BaseScan25 to GitHub Pages
 on:
   push:
     branches: [main]
@@ -35,7 +35,7 @@ jobs:
           }
           console.log('Configured API origin:', api);
           NODE
-      - name: Validate site content and JavaScript
+      - name: Validate site, backend and inline scripts
         run: |
           node <<'NODE'
           const fs = require('node:fs');
@@ -44,40 +44,29 @@ jobs:
           const safety = fs.readFileSync('safety.html', 'utf8');
           const backend = fs.readFileSync('backend/src/index.js', 'utf8');
           const schema = fs.readFileSync('backend/schema.postgres.sql', 'utf8');
-          if (!schema.includes('CREATE TABLE IF NOT EXISTS orders') || !schema.includes('CREATE TABLE IF NOT EXISTS reports')) throw new Error('Backend database schema missing required tables.');
           const server = fs.readFileSync('backend/server.js', 'utf8');
-          fs.writeFileSync('/tmp/basegrid-backend.mjs', backend);
-          fs.writeFileSync('/tmp/basegrid-server.mjs', server);
-          const serverCheck = cp.spawnSync(process.execPath, ['--check', '/tmp/basegrid-server.mjs'], {encoding:'utf8'});
-          if (serverCheck.status !== 0) throw new Error('Node server JavaScript syntax error: ' + (serverCheck.stderr || serverCheck.stdout));
-          const backendCheck = cp.spawnSync(process.execPath, ['--check', '/tmp/basegrid-backend.mjs'], {encoding:'utf8'});
-          if (backendCheck.status !== 0) throw new Error('Backend JavaScript syntax error: ' + (backendCheck.stderr || backendCheck.stdout));
-          if (!backend.includes('eth_getLogs') || !backend.includes('api.gopluslabs.io') || !backend.includes('api.rugcheck.xyz') || !backend.includes('api.resend.com')) throw new Error('Backend provider/payment/email integration missing.');
+          if (!schema.includes('CREATE TABLE IF NOT EXISTS orders') || !schema.includes('CREATE TABLE IF NOT EXISTS reports')) throw new Error('Backend database schema missing required tables.');
+          for (const [name, source] of [['backend', backend], ['server', server]]) {
+            const path = '/tmp/' + name + '.mjs';
+            fs.writeFileSync(path, source);
+            const result = cp.spawnSync(process.execPath, ['--check', path], {encoding:'utf8'});
+            if (result.status !== 0) throw new Error(name + ' JavaScript syntax error: ' + (result.stderr || result.stdout));
+          }
+          if (!backend.includes('eth_getLogs') || !backend.includes('api.gopluslabs.io') || !backend.includes('api.rugcheck.xyz') || !backend.includes('api.resend.com') || !backend.includes('/api/stripe/checkout')) throw new Error('Backend provider/payment/email integration missing.');
+          for (const value of ['<title>BaseScan25', 'id="scanForm"', 'id="checkoutForm"', 'Token Safety Brief', '$1.49', 'name="basegrid-api"', 'prefers-reduced-motion']) if (!html.includes(value)) throw new Error('Missing storefront feature/config: ' + value);
           for (const value of ['id="query"', 'id="chain"', 'id="scan"', 'api.gopluslabs.io', 'api.dexscreener.com', 'unknown']) if (!safety.includes(value)) throw new Error('Missing safety lab feature/config: ' + value);
-          const required = ['<title>', 'id="grid"', 'id="search"', 'id="pay-button"', 'id="recipient"', 'id="payments"', '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', 'prefers-reduced-motion'];
-          for (const value of required) if (!html.includes(value)) throw new Error('Missing required page element/config: ' + value);
-          if (html.includes('0x1BD2a89E17c4d17F9bFc1757Bd9Cc299e6a0038E')) throw new Error('A hard-coded receiving address remains in the build.');
-          const tokenBlock = html.match(/const TOKENS=\[(.*?)\];\nconst USDC=/s);
-          if (!tokenBlock) throw new Error('Token list not found');
-          const entries = [...tokenBlock[1].matchAll(/\["[^"]+",\s*"0x[a-fA-F0-9]{40}"\]/g)];
-          if (entries.length !== 25) throw new Error('Expected 25 address entries; found ' + entries.length);
+          if (html.includes('sk_live_') || html.includes('whsec_') || html.includes('rk_live_')) throw new Error('A Stripe secret appears in public HTML.');
           const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
           const safetyScripts = [...safety.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)].map(m => m[1]).filter(s => s.trim());
-          safetyScripts.forEach((script, i) => {
-            const path = '/tmp/safety-inline-' + i + '.js';
+          [...scripts.map((s,i)=>['storefront',s,i]), ...safetyScripts.map((s,i)=>['safety',s,i])].forEach(([name,script,i]) => {
+            const path = '/tmp/' + name + '-inline-' + i + '.js';
             fs.writeFileSync(path, script);
             const result = cp.spawnSync(process.execPath, ['--check', path], {encoding:'utf8'});
-            if (result.status !== 0) throw new Error('Safety lab inline script syntax error: ' + (result.stderr || result.stdout));
-          });
-          scripts.forEach((script, i) => {
-            const path = '/tmp/basegrid-inline-' + i + '.js';
-            fs.writeFileSync(path, script);
-            const result = cp.spawnSync(process.execPath, ['--check', path], {encoding:'utf8'});
-            if (result.status !== 0) throw new Error('Inline script syntax error: ' + (result.stderr || result.stdout));
+            if (result.status !== 0) throw new Error(name + ' inline script syntax error: ' + (result.stderr || result.stdout));
           });
           for (const path of ['manifest.webmanifest', 'icon.svg', 'sw.js']) if (!fs.existsSync(path)) throw new Error('Missing app asset: ' + path);
           JSON.parse(fs.readFileSync('manifest.webmanifest', 'utf8'));
-          console.log('Validated site, safety lab, PostgreSQL schema, Node server syntax, no embedded legacy recipient address, 25 contracts, app assets, and ' + (scripts.length + safetyScripts.length) + ' inline scripts.');
+          console.log('Validated redesigned storefront, safety lab, PostgreSQL schema, backend syntax, public secret guard, app assets and inline scripts.');
           NODE
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3
