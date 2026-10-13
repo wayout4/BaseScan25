@@ -2,7 +2,7 @@ name: Validate Render backend
 on:
   pull_request:
   push:
-    branches: [render-postgres-migration]
+    branches: [main, render-postgres-migration]
 permissions:
   contents: read
 jobs:
