@@ -96,6 +96,21 @@ async function verifyPayments(env) {
     }
     from=to+1;
   }
+  // Recover Base USDC orders whose on-chain payment was accepted but report generation
+  // or email delivery failed. The block cursor may already have advanced, so retries
+  // must come from durable order state rather than rescanning the same transfer logs.
+  const retryResult = await db.prepare("SELECT * FROM orders WHERE payment_method='usdc' AND status IN ('paid','report_ready') ORDER BY updated_at ASC LIMIT 25").run();
+  for (const order of (retryResult.results || [])) {
+    // If email is not configured, keep the report available through the order endpoint
+    // without repeatedly regenerating it. Retry report generation for paid orders and
+    // retry report_ready orders only when email delivery is configured.
+    if (order.status === "report_ready" && !(env.RESEND_API_KEY && env.FROM_EMAIL && order.email)) continue;
+    try {
+      await deliverOrder(env, order, order.tx_hash || "unknown", order.paid_block ?? "unknown");
+    } catch (e) {
+      console.error("payment fulfillment retry failed", order.id, e.message);
+    }
+  }
   await db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run().catch(async()=>db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run());
   return {head,safe,checked,paid};
 }
