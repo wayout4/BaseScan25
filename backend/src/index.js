@@ -129,11 +129,69 @@ async function handle(request,env) {
   if(request.method==="OPTIONS")return new Response(null,{status:204,headers:cors(env,origin)});
   const url=new URL(request.url),path=url.pathname.replace(/\/+$/,"")||"/";
   if(env.SITE_ORIGIN && origin && origin!==env.SITE_ORIGIN)return json({ok:false,error:"Origin not allowed"},403,cors(env,origin));
-  if(path==="/api/health"&&request.method==="GET")return json({ok:true,service:"BaseGrid Safety API",time:new Date().toISOString(),databaseConfigured:!!env.DB,paymentRecipientConfigured:!!env.PAYMENT_RECIPIENT,adminSecretConfigured:!!env.ADMIN_SECRET,paymentVerifierConfigured:!!(env.DB&&env.PAYMENT_RECIPIENT&&env.ADMIN_SECRET),emailConfigured:!!(env.RESEND_API_KEY&&env.FROM_EMAIL),paymentRecipient:env.PAYMENT_RECIPIENT||null,priceUSDC:"1.49",paymentNetwork:"Base Mainnet"},200,cors(env,origin));
+  if(path==="/api/health"&&request.method==="GET")return json({ok:true,service:"BaseGrid Safety API",time:new Date().toISOString(),databaseConfigured:!!env.DB,paymentRecipientConfigured:!!env.PAYMENT_RECIPIENT,adminSecretConfigured:!!env.ADMIN_SECRET,paymentVerifierConfigured:!!(env.DB&&env.PAYMENT_RECIPIENT&&env.ADMIN_SECRET),emailConfigured:!!(env.RESEND_API_KEY&&env.FROM_EMAIL),stripeConfigured:!!env.STRIPE_SECRET_KEY,stripeWebhookConfigured:!!env.STRIPE_WEBHOOK_SECRET,paymentRecipient:env.PAYMENT_RECIPIENT||null,priceUSDC:"1.49",paymentNetwork:"Base Mainnet"},200,cors(env,origin));
   if(path==="/api/scan"&&request.method==="GET"){
     const asset=url.searchParams.get("asset")||"",network=url.searchParams.get("network")||"";
     if(!asset||!network)return json({ok:false,error:"network and asset are required"},400,cors(env,origin));
     try{return json(await scanAsset(network,asset),200,cors(env,origin));}catch(e){return json({ok:false,error:e.message},502,cors(env,origin));}
+  }
+  if(path==="/api/stripe/checkout"&&request.method==="POST"){
+    if(!env.DB||!env.STRIPE_SECRET_KEY)return json({ok:false,error:"Card checkout is not configured on the server."},503,cors(env,origin));
+    let b;try{b=await request.json()}catch{return json({ok:false,error:"Invalid JSON."},400,cors(env,origin))}
+    const network=String(b.network||"").trim().slice(0,80),asset=String(b.asset||"").trim(),email=String(b.email||"").trim();
+    if(!network||!asset||asset.length>128||!validEmail(email)||! /^[A-Za-z0-9._:-]{2,128}$/.test(asset)||/^0x0{40}$/i.test(asset))return json({ok:false,error:"Provide a valid network, token address/mint/ticker, and email."},400,cors(env,origin));
+    const id=crypto.randomUUID(),now=Date.now(),expires=now+30*60*1000;
+    await env.DB.prepare("INSERT INTO orders(id,network,asset,payer_address,email,amount_units,amount_usdc,status,created_at,updated_at,expires_at,created_block,payment_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,network,asset,"stripe:"+id,email,"0","1.49","pending",now,now,expires,0,"stripe").run();
+    const form=new URLSearchParams();
+    form.set("mode","payment");form.set("success_url",(env.SITE_URL||"https://wayout4.github.io/BaseScan25/")+"?checkout=success&order_id="+encodeURIComponent(id));
+    form.set("cancel_url",(env.SITE_URL||"https://wayout4.github.io/BaseScan25/")+"?checkout=cancel&order_id="+encodeURIComponent(id));
+    form.set("customer_email",email);form.set("client_reference_id",id);
+    form.set("metadata[order_id]",id);form.set("metadata[product]","token_safety_scan");
+    form.set("payment_intent_data[metadata][order_id]",id);
+    form.set("line_items[0][price_data][currency]","usd");form.set("line_items[0][price_data][unit_amount]","149");
+    form.set("line_items[0][price_data][product_data][name]","BaseScan25 Token Safety Scan");
+    form.set("line_items[0][price_data][product_data][description]","One-time automated token safety research brief");
+    form.set("line_items[0][quantity]","1");form.set("payment_method_types[0]","card");
+    try {
+      const response=await fetch("https://api.stripe.com/v1/checkout/sessions",{method:"POST",headers:{"authorization":"Bearer "+env.STRIPE_SECRET_KEY,"content-type":"application/x-www-form-urlencoded","idempotency-key":"basescan25-checkout-"+id},body:form.toString()});
+      const session=await response.json();
+      if(!response.ok||!session.url||!session.id)throw new Error(session?.error?.message||"Stripe did not create a checkout session.");
+      await env.DB.prepare("UPDATE orders SET stripe_session_id=?,updated_at=? WHERE id=?").bind(session.id,Date.now(),id).run();
+      return json({ok:true,orderId:id,checkoutUrl:session.url,sessionId:session.id,amountUSD:"1.49"},200,cors(env,origin));
+    } catch(e) {
+      await env.DB.prepare("UPDATE orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").bind(Date.now(),id).run().catch(()=>{});
+      console.error("Stripe checkout creation failed:",e.message);
+      return json({ok:false,error:"Could not start card checkout. No payment was taken."},502,cors(env,origin));
+    }
+  }
+  if(path==="/api/stripe/webhook"&&request.method==="POST"){
+    if(!env.DB||!env.STRIPE_WEBHOOK_SECRET)return json({ok:false,error:"Stripe webhook is not configured."},503);
+    const signature=request.headers.get("stripe-signature")||"";
+    const fields=Object.fromEntries(signature.split(",").map(part=>part.trim().split("=",2)));
+    const timestamp=Number(fields.t||0),v1=fields.v1||"";
+    if(!timestamp||Math.abs(Date.now()/1000-timestamp)>300||!/^[a-f0-9]{64}$/i.test(v1))return json({ok:false,error:"Invalid Stripe signature."},400);
+    const raw=await request.text();
+    try {
+      const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+      const digest=new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(timestamp+"."+raw)));
+      const expected=Array.from(digest,b=>b.toString(16).padStart(2,"0")).join("");
+      let mismatch=expected.length^v1.length;for(let i=0;i<Math.min(expected.length,v1.length);i++)mismatch|=expected.charCodeAt(i)^v1.charCodeAt(i);
+      if(mismatch!==0)return json({ok:false,error:"Invalid Stripe signature."},400);
+    } catch(e){console.error("Stripe signature verification error:",e.message);return json({ok:false,error:"Could not verify Stripe signature."},400);}
+    let event;try{event=JSON.parse(raw)}catch{return json({ok:false,error:"Invalid webhook JSON."},400)}
+    if(event.type==="checkout.session.completed"||event.type==="checkout.session.async_payment_succeeded"){
+      const session=event.data?.object;
+      if(session?.mode==="payment"&&session?.payment_status==="paid"&&session?.metadata?.product==="token_safety_scan"){
+        const orderId=session.metadata.order_id;
+        if(!orderId||!session.id)return json({ok:false,error:"Checkout metadata missing."},400);
+        const order=await env.DB.prepare("SELECT * FROM orders WHERE id=? AND payment_method='stripe'").bind(orderId).first();
+        if(order&&order.status==="pending"&&(!order.stripe_session_id||order.stripe_session_id===session.id)){
+          const updated=await env.DB.prepare("UPDATE orders SET status='paid',stripe_session_id=?,stripe_payment_intent_id=?,updated_at=? WHERE id=? AND status='pending' AND payment_method='stripe'").bind(session.id,typeof session.payment_intent==="string"?session.payment_intent:null,Date.now(),orderId).run();
+          if(updated.meta?.changes){try{await deliverOrder(env,{...order,stripe_session_id:session.id},session.id,"Stripe")}catch(e){console.error("Stripe report delivery failed",orderId,e.message)}}
+        }
+      }
+    }
+    return json({received:true},200);
   }
   if(path==="/api/order"&&request.method==="POST"){
     if(!env.DB||!env.PAYMENT_RECIPIENT)return json({ok:false,error:"Checkout backend is not configured."},503,cors(env,origin));
