@@ -223,7 +223,9 @@ async function handle(request,env) {
         if(order&&(order.status==="pending"||order.status==="paid"||order.status==="report_ready")){
           if(order.status==="pending")await env.DB.prepare("UPDATE orders SET status='paid',stripe_payment_intent_id=?,updated_at=? WHERE id=? AND status='pending' AND payment_method='stripe' AND stripe_session_id=?").bind(typeof session.payment_intent==="string"?session.payment_intent:null,Date.now(),order.id,session.id).run();
           const report=await env.DB.prepare("SELECT order_id FROM reports WHERE order_id=?").bind(order.id).first();
-          if(!report){
+          // Stripe retries must resume fulfillment if the report was generated but email delivery failed
+          // or email was not configured on the first attempt. Never rerun a fully delivered order.
+          if(!report || order.status==="report_ready" || order.status==="paid"){
             try{await deliverOrder(env,{...order,status:"paid",stripe_session_id:session.id},session.id,"Stripe")}
             catch(e){console.error("Stripe report delivery failed",order.id,e.message);return json({ok:false,error:"Payment received; report fulfillment will retry."},500)}
           }
