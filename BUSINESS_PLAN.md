@@ -74,3 +74,24 @@ Visits → preview starts → preview completions → checkout starts → paid c
 
 ## Decision rule
 Do not expand the catalog until the $1.49 offer has reliable fulfillment, a clear value proposition, support/refund handling and positive contribution margin or a deliberately funded validation budget.
+
+
+## Multi-token bundles and AI-agent sales (13 October 2026)
+
+### Active one-time offers
+- Token Safety Brief — $1.49 for one asset: https://buy.stripe.com/fZubJ31Sn0EI4Q71dYdIA08
+- 10-Asset Research Bundle — $7.99 for up to ten assets: https://buy.stripe.com/4gM00ldB59be0zR09UdIA09
+- 25-Asset Research Bundle — $14.99 for up to twenty-five assets: https://buy.stripe.com/8x200laoT3QU1DVcWGdIA0a
+
+The Stripe payment links are active in live mode. They collect payment but do not automatically collect a buyer's asset list or deliver a bundle. Verify each payment and fulfill manually until the end-to-end workflow is built and tested. Do not advertise automatic delivery yet.
+
+### Pricing logic
+The 10-asset tier is about $0.80 per asset; the 25-asset tier is about $0.60 per asset. This creates a clear volume incentive while keeping offers one-time and avoiding a subscription before recurring value exists. These are initial hypotheses, not validated conversion results. Measure product-page clicks, checkout conversion, refunds, support time, repeat purchases and net revenue after payment fees.
+
+### Recurring revenue
+A $19/month monitored watchlist could be tested only after scheduled scans, alert delivery, cancellation handling, billing-state synchronization and customer support work reliably. Do not sell continuous monitoring or activate recurring billing until that service exists. A repeat-use prepaid credit pack is a lower-risk later test.
+
+### AI-agent and bot distribution
+The repository's machine-readable catalog is published at https://wayout4.github.io/BaseScan25/catalog.json after Pages deployment. It lists product IDs, one-time prices, asset limits, checkout URLs and fulfillment caveats. A catalog improves machine readability but does not guarantee agent discovery or sales. Payment links are human-friendly hosted checkout, not a native machine-payment API. Stripe documents agentic catalog distribution and machine payment protocols here: https://stripe.com/use-cases/agentic-commerce and https://stripe.com/blog/machine-payments-protocol.
+
+Recommended sequence: keep the catalog accurate; document a machine-readable request/response interface once reports can be delivered reliably; then evaluate an MCP server or Stripe-supported machine-payment integration with server-side payment verification, idempotency, quotas and fraud controls. Never put secret credentials in browser code or expose broad payment authority to agents.
