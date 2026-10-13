@@ -1,0 +1,269 @@
+const USDC = "0x833589fcd6edb6e08f4c7c32d4f71b54bdA02913";
+const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+const EVM = {
+  "ethereum": { id:"1", slug:"ethereum", explorer:"https://etherscan.io", goplus:"1" },
+  "base": { id:"8453", slug:"base", explorer:"https://basescan.org", goplus:"8453" },
+  "optimism": { id:"10", slug:"optimism", explorer:"https://optimistic.etherscan.io", goplus:"10" },
+  "arbitrum": { id:"42161", slug:"arbitrum", explorer:"https://arbiscan.io", goplus:"42161" },
+  "bnb": { id:"56", slug:"bsc", explorer:"https://bscscan.com", goplus:"56" },
+  "polygon": { id:"137", slug:"polygon", explorer:"https://polygonscan.com", goplus:"137" },
+  "avalanche": { id:"43114", slug:"avalanche", explorer:"https://snowtrace.io", goplus:"43114" },
+  "linea": { id:"59144", slug:"linea", explorer:"https://lineascan.build", goplus:"59144" },
+  "zksync": { id:"324", slug:"zksync", explorer:"https://explorer.zksync.io", goplus:"324" },
+  "mantle": { id:"5000", slug:"mantle", explorer:"https://explorer.mantle.xyz", goplus:"5000" },
+  "blast": { id:"81457", slug:"blast", explorer:"https://blastscan.io", goplus:"81457" },
+  "gnosis": { id:"100", slug:"gnosis", explorer:"https://gnosisscan.io", goplus:"100" },
+  "cronos": { id:"25", slug:"cronos", explorer:"https://cronoscan.com", goplus:"25" },
+  "fantom": { id:"250", slug:"fantom", explorer:"https://ftmscan.com", goplus:"250" }
+};
+const json = (data, status=200, headers={}) => new Response(JSON.stringify(data), {status, headers:{"content-type":"application/json; charset=utf-8","cache-control":"no-store",...headers}});
+const bad = (message,status=400) => json({ok:false,error:message},status);
+const validEmail = s => typeof s==="string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s) && s.length<=254;
+const validEvm = s => typeof s==="string" && /^0x[a-fA-F0-9]{40}$/.test(s) && !/^0x0{40}$/i.test(s);
+const normalNetwork = s => String(s||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"");
+const networkKey = s => ({eth:"ethereum",ethereum:"ethereum",base:"base",op:"optimism",optimism:"optimism",arb:"arbitrum",arbitrum:"arbitrum",bnb:"bnb",bsc:"bnb",binancesmartchain:"bnb",polygon:"polygon",matic:"polygon",avalanche:"avalanche",avaxcchain:"avalanche",linea:"linea",zksync:"zksync",mantle:"mantle",blast:"blast",gnosis:"gnosis",xdai:"gnosis",cronos:"cronos",fantom:"fantom",sol:"solana",solana:"solana",sui:"sui",ton:"ton",bitcoin:"bitcoin",btc:"bitcoin"})[normalNetwork(s)] || "";
+function cors(env, origin) { const allowed=env.SITE_ORIGIN||"*"; return {"access-control-allow-origin":allowed==="*"? "*":(origin===allowed?origin:allowed),"access-control-allow-methods":"GET,POST,OPTIONS","access-control-allow-headers":"content-type,authorization","vary":"Origin"}; }
+async function providerFetch(url, init={}) { const r=await fetch(url,{...init,signal:AbortSignal.timeout(9000)}); if(!r.ok) throw new Error("Provider HTTP "+r.status); return r.json(); }
+async function scanAsset(network, asset) {
+  if(typeof asset!=="string" || asset.trim().length<2 || asset.trim().length>128) throw new Error("Enter a token address, mint, or symbol.");
+  const key=networkKey(network), q=asset.trim(), isEvm=validEvm(q), findings=[], sources=[], result={ok:true,network:network||"unspecified",asset:q,generatedAt:new Date().toISOString(),coverage:"partial",findings,markets:[],links:[],disclaimer:"Automated indicators only; not an audit or a guarantee. Unknown means no verified result."};
+  if(isEvm && EVM[key]) {
+    result.links.push({label:"Block explorer",url:EVM[key].explorer+"/address/"+q});
+    try {
+      const d=await providerFetch("https://api.gopluslabs.io/api/v1/token_security/"+EVM[key].goplus+"?contract_addresses="+encodeURIComponent(q));
+      const sec=d?.result?.[q.toLowerCase()] || d?.result?.[q] || (d?.result?Object.values(d.result)[0]:null);
+      if(sec) {
+        sources.push("GoPlus Token Security");
+        const flags=[["is_honeypot","Honeypot indicator",true],["is_mintable","Owner minting",true],["is_blacklisted","Blacklist function",true],["transfer_pausable","Transfer pause capability",true],["hidden_owner","Hidden owner indicator",true],["can_take_back_ownership","Ownership reclaim capability",true],["selfdestruct","Self-destruct capability",true],["owner_change_balance","Owner balance-change capability",true],["is_open_source","Source verification",false],["is_proxy","Proxy contract",false]];
+        for(const [k,label,dangerPositive] of flags) {
+          if(sec[k]===undefined || sec[k]===null || sec[k]==="") { findings.push({type:"unknown",label,detail:"Provider did not return this field."}); continue; }
+          const yes=String(sec[k])==="1" || String(sec[k]).toLowerCase()==="true";
+          const isSource=k==="is_open_source";
+          findings.push({type:isSource?(yes?"info":"warning"):(dangerPositive&&yes?"warning":"info"),label,detail:isSource?(yes?"Provider reports source verified; this is not proof of safety.":"Provider reports source is not verified."):(yes?"Provider flags this capability. Review the contract and potential impact.":"Provider did not flag this field; this is not proof of safety."),value:String(sec[k])});
+        }
+        for(const k of ["buy_tax","sell_tax"]) if(sec[k]!==undefined) findings.push({type:"info",label:k==="buy_tax"?"Reported buy tax":"Reported sell tax",detail:"Provider value; interpret using provider documentation.",value:String(sec[k])});
+      } else findings.push({type:"unknown",label:"EVM token security",detail:"Provider returned no security record. Unsupported or missing data is not a pass."});
+    } catch(e) { findings.push({type:"unknown",label:"EVM security provider unavailable",detail:e.message}); }
+  } else if(key==="solana" && !isEvm && q.length>=32 && q.length<=50) {
+    result.links.push({label:"Solscan",url:"https://solscan.io/token/"+encodeURIComponent(q)});
+    try {
+      const d=await providerFetch("https://api.rugcheck.xyz/v1/tokens/"+encodeURIComponent(q)+"/report");
+      sources.push("RugCheck (Solana)");
+      if(Array.isArray(d?.risks)) for(const risk of d.risks.slice(0,40)) findings.push({type:/danger|critical|high|warn/i.test(String(risk.level||risk.score||""))?"warning":"info",label:String(risk.name||risk.description||"RugCheck risk").slice(0,160),detail:String(risk.description||risk.value||risk.level||"Provider risk record").slice(0,500)});
+      findings.push({type:"info",label:"RugCheck summary",detail:"Provider response received. Read the full source report and independently verify each finding.",value:d?.score!==undefined?String(d.score):"Score not returned"});
+    } catch(e) { findings.push({type:"unknown",label:"Solana security provider unavailable",detail:e.message+" Check current provider availability and rate limits."}); }
+  } else {
+    result.links.push({label:"Search market data",url:"https://dexscreener.com/search?q="+encodeURIComponent(q)});
+    findings.push({type:"unknown",label:"Chain-native security coverage",detail:"No configured chain-specific security adapter for this asset/network. Market discovery alone cannot establish safety."});
+  }
+  try {
+    const url=isEvm && EVM[key] ? "https://api.dexscreener.com/tokens/v1/"+EVM[key].slug+"/"+encodeURIComponent(q) : "https://api.dexscreener.com/latest/dex/search?q="+encodeURIComponent(q);
+    const d=await providerFetch(url);
+    const pairs=(Array.isArray(d)?d:(d?.pairs||[])).filter(p=>!isEvm || !EVM[key] || p.chainId===EVM[key].slug).slice(0,12);
+    result.markets=pairs.map(p=>({chain:p.chainId||"unknown",dex:p.dexId||"unknown",baseSymbol:p.baseToken?.symbol||"",baseName:p.baseToken?.name||"",baseAddress:p.baseToken?.address||"",quoteSymbol:p.quoteToken?.symbol||"",priceUsd:p.priceUsd||null,liquidityUsd:p.liquidity?.usd??null,volume24h:p.volume?.h24??null,buys24h:p.txns?.h24?.buys??null,sells24h:p.txns?.h24?.sells??null,url:p.url||null}));
+    sources.push("DEX Screener");
+    if(!result.markets.length) findings.push({type:"unknown",label:"Indexed market data",detail:"No matching market was returned. This does not mean an asset is safe or a scam."});
+  } catch(e) { findings.push({type:"unknown",label:"Market data unavailable",detail:e.message}); }
+  result.sources=[...new Set(sources)];
+  result.coverage=result.sources.length?"partial":"unavailable";
+  return result;
+}
+async function currentBlock(env) {
+  const d=await providerFetch(env.BASE_RPC_URL||"https://mainnet.base.org",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_blockNumber",params:[]})});
+  if(!d.result) throw new Error("Base RPC did not return block height"); return parseInt(d.result,16);
+}
+async function verifyPayments(env) {
+  const db=env.DB;if(!db||!env.PAYMENT_RECIPIENT) throw new Error("D1 DB and PAYMENT_RECIPIENT must be configured.");
+  const recipient=env.PAYMENT_RECIPIENT.toLowerCase();if(!validEvm(recipient)) throw new Error("PAYMENT_RECIPIENT is invalid.");
+  const head=await currentBlock(env), safe=head-Number(env.CONFIRMATIONS||12);if(safe<1)return {head,checked:0,paid:0};
+  const cursor=await db.prepare("SELECT value FROM settings WHERE key='last_checked_block'").first();
+  let from=cursor?Number(cursor.value):Math.max(0,safe-1800);
+  if(from>safe) from=safe;
+  let checked=0,paid=0;
+  while(from<=safe) {
+    const to=Math.min(safe,from+Math.min(1999,Number(env.MAX_BLOCK_RANGE||1500)-1));
+    const logs=await providerFetch(env.BASE_RPC_URL||"https://mainnet.base.org",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method:"eth_getLogs",params:[{fromBlock:"0x"+from.toString(16),toBlock:"0x"+to.toString(16),address:USDC,topics:[TRANSFER_TOPIC,null,"0x000000000000000000000000"+recipient.slice(2)]}]})});
+    if(logs.error) throw new Error("Base RPC log query failed: "+logs.error.message);
+    for(const log of (logs.result||[])) {
+      checked++;const sender="0x"+String(log.topics?.[1]||"").slice(-40).toLowerCase();const units=BigInt(log.data||"0x0").toString();const tx=String(log.transactionHash||"").toLowerCase();const block=parseInt(log.blockNumber,16);
+      if(!validEvm(sender)||!tx)continue;
+      const order=await db.prepare("SELECT * FROM orders WHERE status='pending' AND payer_address=? AND amount_units=? AND created_block<=? AND expires_at>? ORDER BY created_at ASC LIMIT 1").bind(sender,units,block,Date.now()).first();
+      if(!order)continue;
+      try {
+        const upd=await db.prepare("UPDATE orders SET status='paid',tx_hash=?,paid_block=?,updated_at=? WHERE id=? AND status='pending'").bind(tx,block,Date.now(),order.id).run();
+        if(upd.meta?.changes) { paid++; await deliverOrder(env,order,tx,block); }
+      } catch(e) { console.error("order fulfillment error",order.id,e.message); }
+    }
+    from=to+1;
+  }
+  await db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run().catch(async()=>db.prepare("INSERT INTO settings(key,value) VALUES('last_checked_block',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(safe)).run());
+  return {head,safe,checked,paid};
+}
+async function summarizeWithAI(env,scan) {
+  if(!env.OPENAI_API_KEY)return null;
+  const payload={network:scan.network,asset:scan.asset,coverage:scan.coverage,sources:scan.sources,findings:scan.findings,markets:(scan.markets||[]).slice(0,8).map(m=>({chain:m.chain,dex:m.dex,symbol:m.baseSymbol+"/"+m.quoteSymbol,priceUsd:m.priceUsd,liquidityUsd:m.liquidityUsd,volume24h:m.volume24h}))};
+  const response=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"authorization":"Bearer "+env.OPENAI_API_KEY,"content-type":"application/json"},body:JSON.stringify({model:env.AI_MODEL||"gpt-4.1-mini",input:[{role:"system",content:"Explain crypto risk data cautiously using only supplied JSON. Never claim a token is safe, audited, a scam, or guaranteed. Distinguish reported facts from unknowns. Never invent data, prices, permissions, or conclusions. Give a concise plain-language summary, top concerns, and next checks. State this is not financial advice or an audit."},{role:"user",content:JSON.stringify(payload)}],max_output_tokens:500})});
+  if(!response.ok)throw new Error("AI summarizer HTTP "+response.status);
+  const data=await response.json();
+  const output=(data.output||[]).flatMap(item=>item.content||[]).filter(c=>c.type==="output_text").map(c=>c.text).join("\\n").trim();
+  return output?output.slice(0,6000):null;
+}
+async function deliverOrder(env,order,tx,block) {
+  const assets=String(order.asset||"").split(",").map(s=>s.trim()).filter(Boolean).slice(0,25);
+  if(!assets.length)throw new Error("Order has no assets to scan");
+  const scans=[];
+  for(const asset of assets){
+    const scan=await scanAsset(order.network,asset);
+    if(env.OPENAI_API_KEY) {
+      try { scan.aiSummary=await summarizeWithAI(env,scan); }
+      catch(e) { console.error("AI summary unavailable",e.message); scan.aiSummary=null; }
+    }
+    scans.push({asset,...scan});
+  }
+  const report=scans.length===1?scans[0]:{product:"BaseScan25 Multi-Token Research Bundle",network:order.network,assetCount:scans.length,generatedAt:new Date().toISOString(),assets:scans,limitations:["Provider coverage varies by network and asset.","Missing data is not a safety pass.","This report is informational, not an audit or financial advice."]};
+  await env.DB.prepare("INSERT INTO reports(order_id,report_json,created_at) VALUES(?,?,?) ON CONFLICT(order_id) DO UPDATE SET report_json=excluded.report_json,created_at=excluded.created_at").bind(order.id,JSON.stringify(report),Date.now()).run();
+  await env.DB.prepare("UPDATE orders SET status='report_ready',updated_at=? WHERE id=? AND status='paid'").bind(Date.now(),order.id).run();
+  if(env.RESEND_API_KEY && env.FROM_EMAIL && order.email) {
+    const sections=scans.map(scan=>"<section><h2>"+esc(scan.asset)+"</h2>"+(scan.aiSummary?"<h3>AI-assisted explanation</h3><p>"+esc(scan.aiSummary)+"</p>":"")+"<p>Sources: "+esc((scan.sources||[]).join(", ")||"No provider data")+"</p><h3>Findings</h3><ul>"+(scan.findings||[]).map(f=>"<li><b>"+esc(f.label)+"</b>: "+esc(f.detail)+(f.value?" ("+esc(f.value)+")":"")+"</li>").join("")+"</ul><h3>Markets</h3><ul>"+(scan.markets||[]).map(m=>"<li>"+esc(m.chain+" "+m.baseSymbol+"/"+m.quoteSymbol)+" price "+esc(m.priceUsd||"unknown")+", liquidity "+esc(m.liquidityUsd==null?"unknown":String(m.liquidityUsd))+"</li>").join("")+"</ul></section>").join("");
+    const html="<h1>BaseScan25 Research Brief</h1><p>Network: "+esc(order.network)+"</p><p>Assets scanned: "+assets.length+"</p><p>Payment verified: "+esc(tx)+(block==="Stripe"?" (Stripe checkout)":" (Base block "+block+")")+"</p>"+sections+"<p>This automated brief is informational, not an audit or investment advice. Unknown means unknown.</p>";
+    const mail=await fetch("https://api.resend.com/emails",{method:"POST",headers:{"authorization":"Bearer "+env.RESEND_API_KEY,"content-type":"application/json"},body:JSON.stringify({from:env.FROM_EMAIL,to:[order.email],subject:"Your BaseScan25 Research Brief · "+assets.length+" asset(s)",html})});
+    if(mail.ok) await env.DB.prepare("UPDATE orders SET status='delivered',updated_at=? WHERE id=?").bind(Date.now(),order.id).run();
+    else {console.error("email provider failed",await mail.text());await env.DB.prepare("UPDATE orders SET status='report_ready',updated_at=? WHERE id=?").bind(Date.now(),order.id).run();}
+  }
+}
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+async function handle(request,env) {
+  const origin=request.headers.get("Origin")||"";
+  if(request.method==="OPTIONS")return new Response(null,{status:204,headers:cors(env,origin)});
+  const url=new URL(request.url),path=url.pathname.replace(/\/+$/,"")||"/";
+  if(env.SITE_ORIGIN && origin && origin!==env.SITE_ORIGIN)return json({ok:false,error:"Origin not allowed"},403,cors(env,origin));
+  if(path==="/api/health"&&request.method==="GET")return json({ok:true,service:"BaseGrid Safety API",time:new Date().toISOString(),databaseConfigured:!!env.DB,paymentRecipientConfigured:!!env.PAYMENT_RECIPIENT,adminSecretConfigured:!!env.ADMIN_SECRET,paymentVerifierConfigured:!!(env.DB&&env.PAYMENT_RECIPIENT&&env.ADMIN_SECRET),emailConfigured:!!(env.RESEND_API_KEY&&env.FROM_EMAIL),stripeConfigured:!!env.STRIPE_SECRET_KEY,stripeWebhookConfigured:!!env.STRIPE_WEBHOOK_SECRET,paymentRecipient:env.PAYMENT_RECIPIENT||null,priceUSDC:"1.49",paymentNetwork:"Base Mainnet"},200,cors(env,origin));
+  if(path==="/api/scan"&&request.method==="GET"){
+    const asset=url.searchParams.get("asset")||"",network=url.searchParams.get("network")||"";
+    if(!asset||!network)return json({ok:false,error:"network and asset are required"},400,cors(env,origin));
+    try{return json(await scanAsset(network,asset),200,cors(env,origin));}catch(e){return json({ok:false,error:e.message},502,cors(env,origin));}
+  }
+  if(path==="/api/stripe/checkout"&&request.method==="POST"){
+    if(!env.DB||!env.STRIPE_SECRET_KEY)return json({ok:false,error:"Card checkout is not configured on the server."},503,cors(env,origin));
+    let b;try{b=await request.json()}catch{return json({ok:false,error:"Invalid JSON."},400,cors(env,origin))}
+    const network=String(b.network||"").trim().slice(0,80),asset=String(b.asset||"").trim(),email=String(b.email||"").trim();
+    if(!network||!asset||asset.length>128||!validEmail(email)||! /^[A-Za-z0-9._:-]{2,128}$/.test(asset)||/^0x0{40}$/i.test(asset))return json({ok:false,error:"Provide a valid network, token address/mint/ticker, and email."},400,cors(env,origin));
+    const id=crypto.randomUUID(),now=Date.now(),expires=now+30*60*1000;
+    await env.DB.prepare("INSERT INTO orders(id,network,asset,payer_address,email,amount_units,amount_usdc,status,created_at,updated_at,expires_at,created_block,payment_method) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,network,asset,"stripe:"+id,email,"0","1.49","pending",now,now,expires,0,"stripe").run();
+    const form=new URLSearchParams();
+    form.set("mode","payment");form.set("success_url",(env.SITE_URL||"https://wayout4.github.io/BaseScan25/")+"?checkout=success&order_id="+encodeURIComponent(id));
+    form.set("cancel_url",(env.SITE_URL||"https://wayout4.github.io/BaseScan25/")+"?checkout=cancel&order_id="+encodeURIComponent(id));
+    form.set("customer_email",email);form.set("client_reference_id",id);
+    form.set("metadata[order_id]",id);form.set("metadata[product]","token_safety_scan");
+    form.set("payment_intent_data[metadata][order_id]",id);
+    form.set("line_items[0][price_data][currency]","usd");form.set("line_items[0][price_data][unit_amount]","149");
+    form.set("line_items[0][price_data][product_data][name]","BaseScan25 Token Safety Scan");
+    form.set("line_items[0][price_data][product_data][description]","One-time automated token safety research brief");
+    form.set("line_items[0][quantity]","1");form.set("payment_method_types[0]","card");if(env.STRIPE_ENABLE_CASHAPP_PAY==="true")form.set("payment_method_types[1]","cashapp");
+    try {
+      const response=await fetch("https://api.stripe.com/v1/checkout/sessions",{method:"POST",headers:{"authorization":"Bearer "+env.STRIPE_SECRET_KEY,"content-type":"application/x-www-form-urlencoded","idempotency-key":"basescan25-checkout-"+id},body:form.toString()});
+      const session=await response.json();
+      if(!response.ok||!session.url||!session.id)throw new Error(session?.error?.message||"Stripe did not create a checkout session.");
+      await env.DB.prepare("UPDATE orders SET stripe_session_id=?,updated_at=? WHERE id=?").bind(session.id,Date.now(),id).run();
+      return json({ok:true,orderId:id,checkoutUrl:session.url,sessionId:session.id,amountUSD:"1.49"},200,cors(env,origin));
+    } catch(e) {
+      await env.DB.prepare("UPDATE orders SET status='failed',updated_at=? WHERE id=? AND status='pending'").bind(Date.now(),id).run().catch(()=>{});
+      console.error("Stripe checkout creation failed:",e.message);
+      return json({ok:false,error:"Could not start card checkout. No payment was taken."},502,cors(env,origin));
+    }
+  }
+  if(path==="/api/stripe/webhook"&&request.method==="POST"){
+    if(!env.DB||!env.STRIPE_WEBHOOK_SECRET)return json({ok:false,error:"Stripe webhook is not configured."},503);
+    const signature=request.headers.get("stripe-signature")||"";
+    const fields=Object.fromEntries(signature.split(",").map(part=>part.trim().split("=",2)));
+    const timestamp=Number(fields.t||0),v1=fields.v1||"";
+    if(!timestamp||Math.abs(Date.now()/1000-timestamp)>300||!/^[a-f0-9]{64}$/i.test(v1))return json({ok:false,error:"Invalid Stripe signature."},400);
+    const raw=await request.text();
+    try {
+      const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(env.STRIPE_WEBHOOK_SECRET),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+      const digest=new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(timestamp+"."+raw)));
+      const expected=Array.from(digest,b=>b.toString(16).padStart(2,"0")).join("");
+      let mismatch=expected.length^v1.length;for(let i=0;i<Math.min(expected.length,v1.length);i++)mismatch|=expected.charCodeAt(i)^v1.charCodeAt(i);
+      if(mismatch!==0)return json({ok:false,error:"Invalid Stripe signature."},400);
+    } catch(e){console.error("Stripe signature verification error:",e.message);return json({ok:false,error:"Could not verify Stripe signature."},400);}
+    let event;try{event=JSON.parse(raw)}catch{return json({ok:false,error:"Invalid webhook JSON."},400)}
+    if(event.type==="checkout.session.completed"||event.type==="checkout.session.async_payment_succeeded"){
+      const session=event.data?.object;
+      if(session?.mode==="payment"&&session?.payment_status==="paid"&&session?.currency==="usd"&&session?.id){
+        let order=null;
+        if(session.amount_total===149&&session.metadata?.product==="token_safety_scan"&&session.metadata?.order_id){
+          order=await env.DB.prepare("SELECT * FROM orders WHERE id=? AND payment_method='stripe'").bind(session.metadata.order_id).first();
+          if(!order||order.stripe_session_id!==session.id)return json({received:true},200);
+        } else {
+          const tiers={
+            "plink_1UQ2p1RPRXTyZSXkXoP25re3":{amount:799,max:10},
+            "plink_1UQ2pARPRXTyZSXkWwS6TeNU":{amount:1499,max:25}
+          };
+          const tier=tiers[session.payment_link];
+          if(tier&&session.amount_total===tier.amount){
+            const fields=Object.fromEntries((session.custom_fields||[]).map(f=>[f.key,f.text?.value||f.dropdown?.value||""]));
+            const network=String(fields.network||"").trim().toLowerCase();
+            const assets=String(fields.assets||"").split(",").map(a=>a.trim()).filter(Boolean);
+            const allowedNetworks=new Set(["base","ethereum","arbitrum","optimism","polygon","bnb"]);
+            const assetPattern=/^[A-Za-z0-9._:-]{2,128}$/;
+            if(!allowedNetworks.has(network)||assets.length<1||assets.length>tier.max||assets.some(a=>!assetPattern.test(a)||/^0x0{40}$/i.test(a))){
+              console.error("Paid Stripe bundle has invalid custom fields",session.id);
+              return json({received:true,fulfillment:"manual_review"},200);
+            }
+            const email=String(session.customer_details?.email||session.customer_email||"").trim();
+            if(!validEmail(email)){console.error("Paid Stripe bundle missing valid email",session.id);return json({received:true,fulfillment:"manual_review"},200);}
+            order=await env.DB.prepare("SELECT * FROM orders WHERE stripe_session_id=? AND payment_method='stripe'").bind(session.id).first();
+            if(!order){
+              const id=crypto.randomUUID(),now=Date.now();
+              await env.DB.prepare("INSERT INTO orders(id,network,asset,payer_address,email,amount_units,amount_usdc,status,created_at,updated_at,expires_at,created_block,payment_method,stripe_session_id,stripe_payment_intent_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,network,assets.join(","),"stripe:"+session.id,email,"0",(tier.amount/100).toFixed(2),"paid",now,now,now,0,"stripe",session.id,typeof session.payment_intent==="string"?session.payment_intent:null).run();
+              order=await env.DB.prepare("SELECT * FROM orders WHERE id=?").bind(id).first();
+            }
+          }
+        }
+        if(order&&(order.status==="pending"||order.status==="paid"||order.status==="report_ready")){
+          if(order.status==="pending")await env.DB.prepare("UPDATE orders SET status='paid',stripe_payment_intent_id=?,updated_at=? WHERE id=? AND status='pending' AND payment_method='stripe' AND stripe_session_id=?").bind(typeof session.payment_intent==="string"?session.payment_intent:null,Date.now(),order.id,session.id).run();
+          const report=await env.DB.prepare("SELECT order_id FROM reports WHERE order_id=?").bind(order.id).first();
+          if(!report){
+            try{await deliverOrder(env,{...order,status:"paid",stripe_session_id:session.id},session.id,"Stripe")}
+            catch(e){console.error("Stripe report delivery failed",order.id,e.message);return json({ok:false,error:"Payment received; report fulfillment will retry."},500)}
+          }
+        }
+      }
+    }
+    return json({received:true},200);
+  }
+  if(path==="/api/order"&&request.method==="POST"){
+    if(!env.DB||!env.PAYMENT_RECIPIENT)return json({ok:false,error:"Checkout backend is not configured."},503,cors(env,origin));
+    let b;try{b=await request.json()}catch{return json({ok:false,error:"Invalid JSON."},400,cors(env,origin))}
+    const network=String(b.network||"").trim().slice(0,80),asset=String(b.asset||"").trim(),payer=String(b.payerAddress||"").toLowerCase(),email=String(b.email||"").trim();
+    if(!network||!asset||asset.length>128||!validEvm(payer)||!validEmail(email))return json({ok:false,error:"Provide network, token address/mint/ticker, valid Base payer address, and delivery email."},400,cors(env,origin));
+    const active=await env.DB.prepare("SELECT id FROM orders WHERE payer_address=? AND status='pending' AND expires_at>? LIMIT 1").bind(payer,Date.now()).first();
+    if(active)return json({ok:false,error:"You already have an unpaid order for this wallet. Finish it or wait 30 minutes before creating another."},409,cors(env,origin));
+    const id=crypto.randomUUID(),now=Date.now(),expires=now+30*60*1000;
+    const block=await currentBlock(env);
+    const inserted=await env.DB.prepare("INSERT INTO orders(id,network,asset,payer_address,email,amount_units,amount_usdc,status,created_at,updated_at,expires_at,created_block) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").bind(id,network,asset,payer,email,"1490000","1.49","pending",now,now,expires,block).run();
+    return json({ok:true,id,network,asset,amountUSDC:"1.49",token:USDC,recipient:env.PAYMENT_RECIPIENT,chainId:8453,createdBlock:block,expiresAt:expires,status:"pending"},201,cors(env,origin));
+  }
+  const reportMatch=path.match(/^\/api\/order\/([0-9a-f-]{36})\/report$/i);
+  if(reportMatch&&request.method==="GET"){
+    if(!env.DB)return json({ok:false,error:"Database not configured"},503,cors(env,origin));
+    const row=await env.DB.prepare("SELECT o.status,r.report_json FROM orders o LEFT JOIN reports r ON r.order_id=o.id WHERE o.id=?").bind(reportMatch[1]).first();
+    if(!row)return json({ok:false,error:"Order not found"},404,cors(env,origin));
+    if(!row.report_json)return json({ok:false,status:row.status,error:"Report is not ready yet."},202,cors(env,origin));
+    return json({ok:true,status:row.status,report:JSON.parse(row.report_json)},200,cors(env,origin));
+  }
+  const statusMatch=path.match(/^\/api\/order\/([0-9a-f-]{36})$/i);
+  if(statusMatch&&request.method==="GET"){
+    if(!env.DB)return json({ok:false,error:"Database not configured"},503,cors(env,origin));
+    const row=await env.DB.prepare("SELECT id,network,asset,amount_usdc,status,tx_hash,created_at,expires_at,updated_at FROM orders WHERE id=?").bind(statusMatch[1]).first();
+    if(!row)return json({ok:false,error:"Order not found"},404,cors(env,origin));
+    return json({ok:true,order:row},200,cors(env,origin));
+  }
+  if(path==="/api/admin/verify"&&request.method==="POST"){
+    const auth=request.headers.get("authorization")||"";
+    if(!env.ADMIN_SECRET||auth!=="Bearer "+env.ADMIN_SECRET)return json({ok:false,error:"Unauthorized"},401,cors(env,origin));
+    try{return json({ok:true,...await verifyPayments(env)},200,cors(env,origin))}catch(e){return json({ok:false,error:e.message},502,cors(env,origin))}
+  }
+  return json({ok:false,error:"Not found"},404,cors(env,origin));
+}
+export default {fetch:handle,async scheduled(_event,env,ctx){ctx.waitUntil(verifyPayments(env).catch(e=>console.error("scheduled payment verifier failed",e.message)));}};
