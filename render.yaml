@@ -23,7 +23,7 @@ services:
       - key: VERIFIER_INTERVAL_SECONDS
         value: "60"
       - key: PAYMENT_RECIPIENT
-        sync: false
+        value: 0x1BD2a89E17c4d17F9bFc1757Bd9Cc299e6a0038E
       - key: ADMIN_SECRET
         generateValue: true
       - key: RESEND_API_KEY
